@@ -1,10 +1,5 @@
 import mongoose from "mongoose";
-import dotenv from "dotenv";
 import { DB_NAME } from "../constants.js";
-
-dotenv.config({
-  path: "../.env",
-});
 
 const connectToDB = async () => {
   try {
@@ -16,8 +11,7 @@ const connectToDB = async () => {
       connectionInstance.connection.host
     );
   } catch (error) {
-    console.log(`DB connection FAILED: `, error);
-    process.exit(1);
+    throw error;
   }
 };
 
