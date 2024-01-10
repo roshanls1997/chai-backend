@@ -133,7 +133,16 @@ const logoutUser = asyncHandler(async (req, res) => {
     { new: true }
   );
 
-  return res.status(200).json(new ApiResponse(200, {}, "user logged out"));
+  const cookieOptions = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  return res
+    .status(200)
+    .clearCookie("refreshToken", cookieOptions)
+    .clearCookie("accessToken", cookieOptions)
+    .json(new ApiResponse(200, {}, "user logged out"));
 });
 
 export { registerUser, loginUser, logoutUser };
