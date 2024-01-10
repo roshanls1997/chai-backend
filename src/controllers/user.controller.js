@@ -93,8 +93,8 @@ const loginUser = asyncHandler(async (req, res) => {
   }
 
   //   validate password
-  const isPasswordSame = user.checkIfSamePassword(password);
-  if (isPasswordSame) {
+  const isPasswordSame = await user.checkIfSamePassword(password);
+  if (!isPasswordSame) {
     throw new ApiError(400, "invalid creds");
   }
 
