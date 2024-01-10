@@ -3,13 +3,16 @@ import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { User } from "../models/user.model.js";
 import { uploadToCloudinary } from "../utils/cloudinary.js";
+import jwt from "jsonwebtoken";
+import { cookieOptions } from "../constants.js";
 
 const generateTokens = async (userId) => {
   try {
     const user = await User.findById(userId);
     const accessToken = user.generateAccessToken();
     const refreshToken = user.generateRefreshToken();
-    user.save({ validateBeforeSave: false });
+    user.refreshToken = refreshToken;
+    await user.save({ validateBeforeSave: false });
 
     return { accessToken, refreshToken };
   } catch (error) {
@@ -36,7 +39,7 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(409, "User already exists with email or username");
   }
 
-  console.log(req.files);
+  //   console.log(req.files);
   const avatarLocalPath = req.files?.avatar?.[0]?.path;
   const coverImageLocalPath = req.files?.coverImage?.[0]?.path;
   if (!avatarLocalPath) {
@@ -73,8 +76,6 @@ const registerUser = asyncHandler(async (req, res) => {
     createdUser,
     "user registered successfully"
   );
-  console.log(apiResponse, "apiresponse");
-  //   console.log(userResponse, "userresponse");
   return res.status(201).json(apiResponse);
 });
 
@@ -104,11 +105,6 @@ const loginUser = asyncHandler(async (req, res) => {
     "-password -refreshToken"
   );
 
-  const cookieOptions = {
-    httpOnly: true,
-    secure: true,
-  };
-
   return res
     .status(200)
     .cookie("accessToken", accessToken, cookieOptions)
@@ -133,11 +129,6 @@ const logoutUser = asyncHandler(async (req, res) => {
     { new: true }
   );
 
-  const cookieOptions = {
-    httpOnly: true,
-    secure: true,
-  };
-
   return res
     .status(200)
     .clearCookie("refreshToken", cookieOptions)
@@ -145,4 +136,39 @@ const logoutUser = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, {}, "user logged out"));
 });
 
-export { registerUser, loginUser, logoutUser };
+const refreshAccessToken = asyncHandler(async (req, res) => {
+  // NOTE: if you hit it through postman res.cookie will always be set
+  // hence moved to order of taking token from request
+  const token = req.body.refreshToken || req.cookies?.refreshToken;
+
+  if (!token) {
+    throw new ApiError(401, "unauthenticated");
+  }
+
+  try {
+    const decodedToken = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
+
+    const user = await User.findById(decodedToken?._id);
+
+    if (!user) {
+      throw new ApiError(401, "invalid refresh token");
+    }
+
+    if (user.refreshToken !== token) {
+      throw new ApiError(401, "refresh token already used");
+    }
+
+    const { accessToken, refreshToken } = await generateTokens(user._id);
+
+    res
+      .status(200)
+      .cookie("accessToken", accessToken, cookieOptions)
+      .cookie("refreshToken", refreshToken, cookieOptions)
+      .json(
+        new ApiResponse(200, { accessToken, refreshToken }, "tokens refreshed")
+      );
+  } catch (error) {
+    throw new ApiError(401, error?.message || "invalid token");
+  }
+});
+export { registerUser, loginUser, logoutUser, refreshAccessToken };
