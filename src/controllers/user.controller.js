@@ -1,9 +1,9 @@
+import jwt from "jsonwebtoken";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { User } from "../models/user.model.js";
 import { uploadToCloudinary } from "../utils/cloudinary.js";
-import jwt from "jsonwebtoken";
 import { cookieOptions } from "../constants.js";
 
 const generateTokens = async (userId) => {
@@ -136,6 +136,10 @@ const logoutUser = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, {}, "user logged out"));
 });
 
+const getCurrentUser = asyncHandler(async (req, res) => {
+  return res.status(200).json(new ApiResponse(200, req.user, "user details"));
+});
+
 const refreshAccessToken = asyncHandler(async (req, res) => {
   // NOTE: if you hit it through postman res.cookie will always be set
   // hence moved to order of taking token from request
@@ -171,4 +175,81 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     throw new ApiError(401, error?.message || "invalid token");
   }
 });
-export { registerUser, loginUser, logoutUser, refreshAccessToken };
+
+const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!(currentPassword && newPassword)) {
+    throw new ApiError(400, "passwords are required");
+  }
+
+  const user = await User.findById(req.user?._id);
+  const isCurrentPasswordSame = await user.checkIfSamePassword(currentPassword);
+
+  if (!isCurrentPasswordSame) {
+    throw new ApiError(400, "current password is incorrect");
+  }
+
+  user.password = newPassword;
+  await user.save({ validateBeforeSave: false });
+  return res.status(200).json(new ApiResponse(200, {}, "password changed"));
+});
+
+const updateUserDetails = asyncHandler(async (req, res) => {
+  const { fullname, email } = req.body;
+  if (!(fullname && email)) {
+    throw new ApiError(400, "fields are required");
+  }
+  const user = await User.findByIdAndUpdate(
+    req.user?._id,
+    {
+      $set: {
+        fullname,
+        email,
+      },
+    },
+    { new: true }
+  ).select("-password -refreshToken");
+
+  res.status(200).json(new ApiResponse(200, user, "user details updated"));
+});
+
+const updateUserFile = asyncHandler(async (req, res) => {
+  const { type } = req.query;
+  if (!type) {
+    throw new ApiError(400, "file type is required");
+  }
+
+  const fileLocalPath = req.file?.path;
+
+  if (!fileLocalPath) {
+    throw new ApiError(400, "file is required");
+  }
+
+  const uploadedFile = await uploadToCloudinary(fileLocalPath);
+
+  if (!uploadedFile.url) {
+    throw new ApiError(500, "failed to save " + type + " file");
+  }
+  const user = await User.findByIdAndUpdate(
+    req.user?._id,
+    {
+      $set: {
+        [type]: uploadedFile.url,
+      },
+    },
+    { new: true }
+  ).select("-password -refreshToken");
+  res.status(200).json(new ApiResponse(200, user, type + " uploaded"));
+});
+
+export {
+  registerUser,
+  loginUser,
+  logoutUser,
+  getCurrentUser,
+  refreshAccessToken,
+  changePassword,
+  updateUserDetails,
+  updateUserFile,
+};
