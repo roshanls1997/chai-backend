@@ -3,8 +3,11 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { User } from "../models/user.model.js";
+import { Subscription } from "../models/subscription.model.js";
 import { uploadToCloudinary } from "../utils/cloudinary.js";
 import { cookieOptions } from "../constants.js";
+
+export const ignoreFieldsInUser = "-password -refreshToken";
 
 const generateTokens = async (userId) => {
   try {
@@ -66,7 +69,7 @@ const registerUser = asyncHandler(async (req, res) => {
 
   //   get the created user
   const createdUser = await User.findById(userResponse._id).select(
-    "-password -refreshToken"
+    ignoreFieldsInUser
   );
   if (!createdUser) {
     throw new ApiError(500, "failed to register user");
@@ -101,9 +104,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
   const { accessToken, refreshToken } = await generateTokens(user._id);
 
-  const loggedInUser = await User.findById(user._id).select(
-    "-password -refreshToken"
-  );
+  const loggedInUser = await User.findById(user._id).select(ignoreFieldsInUser);
 
   return res
     .status(200)
@@ -209,7 +210,7 @@ const updateUserDetails = asyncHandler(async (req, res) => {
       },
     },
     { new: true }
-  ).select("-password -refreshToken");
+  ).select(ignoreFieldsInUser);
 
   res.status(200).json(new ApiResponse(200, user, "user details updated"));
 });
@@ -227,6 +228,7 @@ const updateUserFile = asyncHandler(async (req, res) => {
   }
 
   const uploadedFile = await uploadToCloudinary(fileLocalPath);
+  // TODO: delete old file once new file is uploaded
 
   if (!uploadedFile.url) {
     throw new ApiError(500, "failed to save " + type + " file");
@@ -239,8 +241,99 @@ const updateUserFile = asyncHandler(async (req, res) => {
       },
     },
     { new: true }
-  ).select("-password -refreshToken");
+  ).select(ignoreFieldsInUser);
   res.status(200).json(new ApiResponse(200, user, type + " uploaded"));
+});
+
+const getUserChannelDetails = asyncHandler(async (req, res) => {
+  let { username } = req.params;
+  username = username?.trim();
+  if (!username) {
+    throw new ApiError(400, "username required");
+  }
+  username = username.toLowerCase();
+  const channelDetails = await User.aggregate([
+    {
+      $match: { username },
+    },
+    {
+      $lookup: {
+        from: "subscriptions",
+        localField: "_id",
+        foreignField: "channel",
+        as: "subscribers",
+      },
+    },
+    {
+      $lookup: {
+        from: "subscriptions",
+        localField: "_id",
+        foreignField: "subscriber",
+        as: "subscribedChannel",
+      },
+    },
+    {
+      $addFields: {
+        subscribersCount: {
+          $size: "$subscribers",
+        },
+        subscribedChannelCount: {
+          $size: "$subscribedChannel",
+        },
+        isSubscribed: {
+          $cond: {
+            if: { $in: [req.user?._id, "$subscribers.subscriber"] },
+            then: true,
+            else: false,
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        fullname: 1,
+        email: 1,
+        username: 1,
+        avatar: 1,
+        coverImage: 1,
+        subscribedChannelCount: 1,
+        subscribersCount: 1,
+        isSubscribed: 1,
+      },
+    },
+  ]);
+  // TODO: is there any way to get 0th index after project
+
+  if (!channelDetails?.length) {
+    throw new ApiError(400, "channel does not exists");
+  }
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, channelDetails[0], "channel details"));
+});
+
+// TODO: can be moved to subscriber modules
+const subscribeToChannel = asyncHandler(async (req, res) => {
+  let { channel } = req.body;
+  channel = channel?.trim();
+  if (!channel) {
+    throw new ApiError(400, "channel not found");
+  }
+
+  const user = await User.findOne({ username: channel.toLowerCase() });
+  if (!user) {
+    throw new ApiError(400, "channel not found");
+  }
+
+  const subscription = await Subscription.create({
+    subscriber: req.user?._id,
+    channel: user._id,
+  });
+
+  res
+    .status(201)
+    .json(new ApiResponse(200, subscription, "subscribed successfully"));
 });
 
 export {
@@ -252,4 +345,6 @@ export {
   changePassword,
   updateUserDetails,
   updateUserFile,
+  getUserChannelDetails,
+  subscribeToChannel,
 };

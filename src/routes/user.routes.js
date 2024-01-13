@@ -2,10 +2,12 @@ import { Router } from "express";
 import {
   changePassword,
   getCurrentUser,
+  getUserChannelDetails,
   loginUser,
   logoutUser,
   refreshAccessToken,
   registerUser,
+  subscribeToChannel,
   updateUserDetails,
   updateUserFile,
 } from "../controllers/user.controller.js";
@@ -30,5 +32,11 @@ router.route("/update-user-details").patch(authenticateUser, updateUserDetails);
 router
   .route("/update-user-files")
   .patch(upload.single("file"), authenticateUser, updateUserFile);
+
+router
+  .route("/get-user-channel-details/:username")
+  .get(authenticateUser, getUserChannelDetails);
+
+router.route("/subscribe").post(authenticateUser, subscribeToChannel);
 
 export default router;
