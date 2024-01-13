@@ -3,6 +3,7 @@ import {
   changePassword,
   getCurrentUser,
   getUserChannelDetails,
+  getUserWatchHistory,
   loginUser,
   logoutUser,
   refreshAccessToken,
@@ -38,5 +39,6 @@ router
   .get(authenticateUser, getUserChannelDetails);
 
 router.route("/subscribe").post(authenticateUser, subscribeToChannel);
+router.route("/watch-history").get(authenticateUser, getUserWatchHistory);
 
 export default router;

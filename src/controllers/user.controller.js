@@ -6,6 +6,7 @@ import { User } from "../models/user.model.js";
 import { Subscription } from "../models/subscription.model.js";
 import { uploadToCloudinary } from "../utils/cloudinary.js";
 import { cookieOptions } from "../constants.js";
+import mongoose from "mongoose";
 
 export const ignoreFieldsInUser = "-password -refreshToken";
 
@@ -313,6 +314,59 @@ const getUserChannelDetails = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, channelDetails[0], "channel details"));
 });
 
+const getUserWatchHistory = asyncHandler(async (req, res) => {
+  const user = await User.aggregate([
+    {
+      $match: { _id: new mongoose.Types.ObjectId(req.user?._id) },
+    },
+    {
+      $lookup: {
+        from: "videos",
+        localField: "watchHistory",
+        foreignField: "_id",
+        as: "videosHistory",
+        pipeline: [
+          {
+            $lookup: {
+              from: "users",
+              localField: "owner",
+              foreignField: "_id",
+              as: "videoOwner",
+              // TODO: try to use this as a new pipeline instead of nested pipeline
+              pipeline: [
+                {
+                  $project: {
+                    fullname: 1,
+                    username: 1,
+                    avatar: 1,
+                  },
+                },
+              ],
+            },
+          },
+          {
+            $addFields: {
+              owner: {
+                $first: "$videoOwner",
+              },
+            },
+          },
+        ],
+      },
+    },
+  ]);
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        user[0].videosHistory,
+        "watch history fetched succesfully"
+      )
+    );
+});
+
 // TODO: can be moved to subscriber modules
 const subscribeToChannel = asyncHandler(async (req, res) => {
   let { channel } = req.body;
@@ -347,4 +401,5 @@ export {
   updateUserFile,
   getUserChannelDetails,
   subscribeToChannel,
+  getUserWatchHistory,
 };
